@@ -26,4 +26,4 @@ COPY entrypoint.sh /sbin/entrypoint.sh
 RUN sudo chmod 755 /sbin/entrypoint.sh
 
 ENTRYPOINT ["/sbin/entrypoint.sh"]
-# CMD ["bash"]
+CMD ["bash"]
