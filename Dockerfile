@@ -1,6 +1,16 @@
 FROM ros:humble
 # FROM ros:humble-ros-base
-RUN apt update && apt install -y ros-humble-joy ros-humble-teleop-twist-joy git qtbase5-dev qt5-qmake cmake libqt5serialport5-dev nano && apt clean && rm -rf /var/lib/apt/lists/
+RUN apt update && apt install -y \
+   ros-humble-joy \
+   ros-humble-teleop-twist-joy \
+   ros-humble-teleop-twist-keyboard \
+   git \
+   qtbase5-dev \
+   qt5-qmake \
+   cmake \
+   libqt5serialport5-dev \
+   nano \
+   && apt clean && rm -rf /var/lib/apt/lists/
 
 RUN mkdir ros2-wave-rover
 COPY ./src ./ros2-wave-rover/src

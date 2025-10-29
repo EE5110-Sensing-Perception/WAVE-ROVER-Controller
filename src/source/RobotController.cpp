@@ -11,8 +11,8 @@
 
 RobotController::RobotController() {
     qDebug() << "v1.0.3";
-    // _pUARTSerialPort = std::make_shared<UARTSerialPort>("/dev/pts/10", 1000000);
-
+    _pUARTSerialPort = std::make_shared<UARTSerialPort>("/dev/pts/10", 1151200);
+    _pROS2Subscriber->declare_parameter("speed_scale", 0.3);
     _pROS2Subscriber = std::make_shared<ROS2Subscriber>();
     _executor = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
     _execThread = std::make_unique<std::thread>(&RobotController::RunRos2Exectutor, this);
@@ -26,7 +26,7 @@ RobotController::RobotController() {
 
     _pROS2Subscriber->SubscribeToTopic("/cmd_vel", [&](const geometry_msgs::msg::Twist::SharedPtr msg){ std::cout << "VEL // " << SendCmdVel(msg); });
 
-    _pUARTSerialPort = std::make_shared<UARTSerialPort>(QString::fromStdString(UART_address), 1000000); // open automatically the first serial port that is found
+    _pUARTSerialPort = std::make_shared<UARTSerialPort>(QString::fromStdString(UART_address), 115200); // open automatically the first serial port that is found
     QObject::connect(this, &RobotController::SendRequestSync, [&](QString s) { _pUARTSerialPort->sendRequestSync(s);});
 
     if(enable_joypad)
@@ -82,6 +82,9 @@ bool RobotController::DisplayRollingMessage(QString line){
 bool RobotController::SendCmdVel(geometry_msgs::msg::Twist::SharedPtr msg){
     nlohmann::json message_json = {};
     float l = 0, r = 0;
+    
+    float speed_scale = _pROS2Subscriber->get_parameter("speed_scale").as_double();
+
 
     // Cap values at [-1 .. 1]
     float x = std::max(std::min((double)msg->linear.x, 1.0), -1.0);
@@ -89,8 +92,8 @@ bool RobotController::SendCmdVel(geometry_msgs::msg::Twist::SharedPtr msg){
 
     // Calculate the intensity of left and right wheels. Simple version.
     // Taken from https://hackernoon.com/unicycle-to-differential-drive-courseras-control-of-mobile-robots-with-ros-and-rosbots-part-2-6d27d15f2010#1e59
-    l = 255.0 * ((x - z));
-    r = 255.0 * ((x + z));
+    l = 255.0 * speed_scale * ((x - z));
+    r = 255.0 * speed_scale * ((x + z));
 
     l = std::max(std::min((double)l, 255.0), -255.0);
     r = std::max(std::min((double)r, 255.0), -255.0);
@@ -107,7 +110,10 @@ bool RobotController::SendCmdVel(geometry_msgs::msg::Twist::SharedPtr msg){
 
     qDebug() << "Sending CmdVel message " << QString::fromStdString(message_json.dump());
     // DisplayRollingMessage(QString::fromStdString(message_json.dump()));
-    emit SendRequestSync(QString::fromStdString(message_json.dump()));
+    
+    // FIX: Add newline character to the JSON command
+    QString command = QString::fromStdString(message_json.dump()) + "\n";
+    emit SendRequestSync(command);
 
     return true;
 }
@@ -124,13 +130,17 @@ void RobotController::JoypadCommandReceived(TimestampedDouble t1, TimestampedDou
 bool RobotController::SendGenericCmd(WAVE_ROVER_COMMAND_TYPE command, QString& response){
     nlohmann::json message_json = {};
     message_json["T"] = command;
-    return _pUARTSerialPort->getResponseSync(QString::fromStdString(message_json.dump()), response);
+    // FIX: Add newline to generic commands too
+    QString cmd = QString::fromStdString(message_json.dump()) + "\n";
+    return _pUARTSerialPort->getResponseSync(cmd, response);
 }
 
 bool RobotController::SendGenericCmd(WAVE_ROVER_COMMAND_TYPE command){
     nlohmann::json message_json = {};
     message_json["T"] = command;
-    _pUARTSerialPort->sendRequestSync(QString::fromStdString(message_json.dump()));
+    // FIX: Add newline to generic commands too
+    QString cmd = QString::fromStdString(message_json.dump()) + "\n";
+    _pUARTSerialPort->sendRequestSync(cmd);
     return true;
 }
 
@@ -165,7 +175,9 @@ bool RobotController::SetOled(int row, QString content){
     message_json["T"] = WAVE_ROVER_COMMAND_TYPE::OLED_SET;
     message_json["lineNum"] = row;
     message_json["Text"] = content.toStdString();
-    _pUARTSerialPort->sendRequestSync(QString::fromStdString(message_json.dump()));
+    // FIX: Add newline to OLED commands too
+    QString cmd = QString::fromStdString(message_json.dump()) + "\n";
+    _pUARTSerialPort->sendRequestSync(cmd);
     return true;
 }
 

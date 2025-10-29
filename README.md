@@ -13,13 +13,13 @@ sudo apt install -y qtcreator qtbase5-dev qt5-qmake cmake libqt5serialport5-dev
 
 ## Run the ros driver directly with a docker image on the robot
 ```
-docker run --privileged -v /dev/ttyS0:/dev/ttyS0 -v /dev/input:/dev/input -it --rm  braoutch/ros2-wave-rover ros2 launch grospote wave_rover_launch.py enable_joypad:=0 UART_address:="/dev/ttyS0"
+docker run --privileged -v /dev/ttyS0:/dev/ttyS0 -v /dev/input:/dev/input -it --rm  briandeegan82/ros2-wave-rover ros2 launch grospote wave_rover_launch.py enable_joypad:=0 UART_address:="/dev/ttyS0"
 ```
 If you add `--restart=always`, it will start when your robot start, pretty convenient.
 
 The controller can also be ran from a docker image, from the robot itself or from a PC on the same wifi network.
 ```
-docker run --privileged -v /run/udev:/run/udev -v /dev:/dev --name controller --net=host -it --rm  braoutch/ros2-wave-rover:latest ros2 launch grospote control_launch.py
+docker run --privileged -v /run/udev:/run/udev -v /dev:/dev --name controller --net=host -it --rm  briandeegan82/ros2-wave-rover:latest ros2 launch grospote control_launch.py
 ```
 It's configured for my controller (a betaflight luxf4 osd) but you can configure it easily with pretty much anything. Open an issue if you need help.
 
