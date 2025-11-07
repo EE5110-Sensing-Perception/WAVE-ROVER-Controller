@@ -34,7 +34,7 @@ cd WAVE-ROVER-Controller
 docker build -t < container_tag > .
 ```
 
-## Build from scratch
+## Build from scratch (not recommended)
 If building from scratch, follow these instructions
 ### Requirements
 
