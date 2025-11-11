@@ -1,44 +1,54 @@
 cmake_minimum_required(VERSION 3.14)
 
-project(grospote LANGUAGES CXX)
+project(wave_rover_controller LANGUAGES CXX)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
-
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(QT NAMES Qt6 Qt5 COMPONENTS Core SerialPort REQUIRED)
 find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Core SerialPort REQUIRED)
 
-#ROS 2 stuff
+# ROS 2 packages
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
 
-FILE(GLOB_RECURSE SRC ${CMAKE_SOURCE_DIR}/src/source/*.cpp ${CMAKE_SOURCE_DIR}/src/include/*.hpp)
-
-include_directories(grospote ${CMAKE_SOURCE_DIR}/src/include)
-
-add_executable(grospote-node ${SRC}
+# Source files
+file(GLOB_RECURSE SRC
+    ${CMAKE_SOURCE_DIR}/src/source/*.cpp
+    ${CMAKE_SOURCE_DIR}/src/include/*.hpp
 )
 
-target_include_directories(grospote-node PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>)
-target_compile_features(grospote-node PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
+# Include directories
+include_directories(${CMAKE_SOURCE_DIR}/src/include)
 
-install(TARGETS grospote-node
-  DESTINATION lib/${PROJECT_NAME})
+# Executable target
+add_executable(wave_rover_controller ${SRC})
+
+# Target include directories
+target_include_directories(wave_rover_controller PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+
+# Compile features
+target_compile_features(wave_rover_controller PUBLIC cxx_std_17)
+
+# Dependencies
+ament_target_dependencies(wave_rover_controller rclcpp geometry_msgs)
+target_link_libraries(wave_rover_controller Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::SerialPort)
+
+# Install targets
+install(TARGETS wave_rover_controller
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 install(DIRECTORY launch DESTINATION share/${PROJECT_NAME}/)
-
-ament_target_dependencies(grospote-node rclcpp geometry_msgs)
-target_link_libraries(grospote-node Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::SerialPort)
-
 
 # Install header files
 install(DIRECTORY
@@ -47,3 +57,4 @@ install(DIRECTORY
 )
 
 ament_package()
+

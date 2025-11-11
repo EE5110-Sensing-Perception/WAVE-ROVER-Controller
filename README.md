@@ -1,23 +1,30 @@
 # Wave Rover Controller
 
-This is a ROS 2 driver for Waveshare Wave Rover.
-This repo is forked from https://github.com/antlassagne/ros2-wave-rover/tree/main. The main adjustments are:
-- Updates for UART comms
-- Added Keyboard controls
-Should work with other waveshare robots based on JSON / UART communication (Offroad UGV, etc.)
+ROS 2 driver for the Waveshare Wave Rover.  
+Forked from [antlassagne/ros2-wave-rover](https://github.com/antlassagne/ros2-wave-rover), with key updates:
+
+- Updated UART communication
+- Added keyboard and joypad control support
+- Improved debugging and error handling
+
+This package should also work with other Waveshare robots using JSON/UART communication (Offroad UGV, etc.).
 
 ![Wave Rover Robot](images/wave-rover-1.jpg)
 
+---
+
 ## Features
 
-- **ROS2 Integration**: Subscribes to `/cmd_vel` topic and converts geometry_msgs/Twist commands to motor control
-- **UART Communication**: JSON-based protocol for reliable serial communication with the robot
-- **Optional Joypad Support**: Built-in joystick controller for manual operation (not tested)
-- **OLED Display Control**: Send messages and status information to the robot's OLED display
-- **WiFi Management**: Configure robot's WiFi hotspot and scanning capabilities
-- **Emergency Stop**: Safety mechanism for immediate robot halt
-- **Multi-threaded Architecture**: Separate threads for ROS2 execution and UART communication
-- **Configurable Parameters**: Adjustable speed scaling and UART device selection
+- **ROS2 Integration**: Subscribes to `/cmd_vel` and converts `geometry_msgs/Twist` commands to motor control.
+- **UART Communication**: JSON-based protocol with the robot’s ESP32.
+- **Keyboard & Joypad Support**: Manual control from a remote PC or onboard joystick.
+- **OLED Display Control**: Display messages and status on the robot’s OLED.
+- **WiFi Management**: Configure the robot’s hotspot and scan networks.
+- **Emergency Stop**: Safety mechanism for immediate halt.
+- **Multi-threaded Architecture**: Separate threads for ROS2 execution and UART communication.
+- **Configurable Parameters**: Adjustable speed scaling and UART device path.
+
+---
 
 ## Package Information
 
@@ -26,194 +33,125 @@ Should work with other waveshare robots based on JSON / UART communication (Offr
 - **License**: MIT
 - **Maintainer**: briandeegan82 (brian.deegan82@gmail.com)
 
-## Docker container
-**Note**: It is strongly recommended to use Docker for consistent deployment (see Dockerfile included).
+---
+
+## Deployment Setup (Preferred)
+Clone this repo onto both remote device and host PC. Run teleop from the host pc, and the controller on the remote device.
+
+### 1. Robot (Driver & UART)
+
+Run the ROS2 driver on the robot to handle UART communication:
+
 ```bash
-git clone https://github.com/EE5110-Sensing-Perception/WAVE-ROVER-Controller.git
-cd WAVE-ROVER-Controller
-docker build -t < container_tag > .
+# If using Docker
+docker run -it --rm \
+  --device=/dev/ttyUSB0 \
+  --group-add dialout \
+  --net=host \
+  wave-rover-controller \
+  ros2 launch wave_rover_controller wave_rover_launch.py UART_address:="/dev/ttyUSB0"
 ```
 
-## Build from scratch (not recommended)
-If building from scratch, follow these instructions
-### Requirements
+**Note:** `--group-add dialout` ensures serial port access without modifying udev rules.
+The robot will subscribe to `/cmd_vel` and execute motor commands.
 
-#### System Dependencies
+### 2. Host PC (Keyboard Teleop)
+
+On your host PC, run ROS2 keyboard teleoperation:
+
 ```bash
-sudo apt install -y qtcreator qtbase5-dev qt5-qmake cmake libqt5serialport5-dev
+# build and run the same docker container on your host PC
+docker build -t wave-rover-host .
+
+# run the container
+docker run -it --rm --privileged --net=host --group-add dialout wave-rover-host
+
+# Launch keyboard teleop pointing to the robot's ROS2 network
+export ROS_DOMAIN_ID=<match_robot_domain>
+ros2 run teleop_twist_keyboard teleop_twist_keyboard
 ```
 
-#### ROS2 Dependencies
-- `rclcpp`
-- `geometry_msgs`
-- `ament_cmake`
+Commands sent from the keyboard will be transmitted to the robot over the ROS2 network.
 
-#### Qt Dependencies
-- Qt5 or Qt6 with Core and SerialPort components
+**note: ensure you have clicked on the teleop terminal, otherwise commands won't be sent**
 
-### Building the Package
-```bash
-# Clone the repository
-git clone https://github.com/EE5110-Sensing-Perception/WAVE-ROVER-Controller.git
-cd WAVE-ROVER-Controller
+---
 
-# Build with colcon
-colcon build --packages-select wave_rover_controller
+## Optional: Joypad Support
 
-# Source the workspace
-source install/setup.bash
-```
+Enable joystick control on the robot:
 
-## Running the Driver
-Start your docker container:
-```bash
-docker run --privileged -v /dev/ttyUSB0:/dev/ttyUSB0 -v /dev/input:/dev/input -it --rm < container_tag >
-```
-#### Basic Operation (without joypad)
-Launch the driver node:
-```bash
-ros2 launch wave_rover_controller wave_rover_launch.py UART_address:="/dev/ttyUSB0"
-```
-Open a second terminal, and run teleop_twist_keyboard:
-```bash
-docker exec -it < container_id > /bin/bash -c "source install/setup.bash && ros2 run teleop_twist_keyboard teleop_twist_keyboard"
-
-```
-![Wave Rover Robot](images/teleop_twist.png)
-
-#### With Joypad Support
-Same as above, but set the enable_joypad flag to 1:
 ```bash
 ros2 launch wave_rover_controller wave_rover_launch.py enable_joypad:=1 UART_address:="/dev/ttyUSB0"
 ```
 
-#### Manual Control via Joypad
-```bash
-ros2 launch wave_rover_controller control_launch.py
-```
+---
 
-### Docker Deployment
+## ROS2 Topics
 
-#### Run on Robot
-```bash
-docker run --privileged -v /dev/ttyUSB0:/dev/ttyUSB0 -v /dev/input:/dev/input -it --rm <docker_build_tag> ros2 launch wave_rover_controller wave_rover_launch.py enable_joypad:=0 UART_address:="/dev/ttyUSB0"
-```
+### Subscribed Topics
 
-#### Run Controller Remotely
-```bash
-docker run --privileged -v /run/udev:/run/udev -v /dev:/dev --name controller --net=host -it --rm <docker_build_tag>:latest ros2 launch wave_rover_controller control_launch.py
-```
+* `/cmd_vel` (`geometry_msgs/msg/Twist`): Velocity commands for robot movement.
 
-**Note**: Add `--restart=always` to automatically start the container on system boot.
+### Published Topics
 
-## Configuration
+* None (control-only node).
 
-### Launch Parameters
+---
 
-#### wave_rover_launch.py
-- `enable_joypad` (default: '0'): Enable/disable joypad controller
-- `UART_address` (default: '/dev/ttyUSB0'): Serial device path
+## Launch Parameters
 
-#### control_launch.py
-- `require_enable_button` (default: False): Require button press for control
-- `axis_linear.x` (default: 4): Joystick axis for linear velocity
-- `axis_angular.yaw` (default: 0): Joystick axis for angular velocity
-- `scale_linear.x` (default: 1.0): Linear velocity scaling factor
-- `scale_angular.yaw` (default: 1.0): Angular velocity scaling factor
+### `wave_rover_launch.py`
 
-### ROS2 Topics
+* `enable_joypad` (default: 0): Enable joystick control.
+* `UART_address` (default: `/dev/ttyUSB0`): Serial device path.
 
-#### Subscribed Topics
-- `/cmd_vel` (geometry_msgs/msg/Twist): Velocity commands for robot movement
+### `control_launch.py`
 
-#### Published Topics
-- None (this is a control-only node)
+* `require_enable_button` (default: False)
+* `axis_linear.x` (default: 4)
+* `axis_angular.yaw` (default: 0)
+* `scale_linear.x` (default: 1.0)
+* `scale_angular.yaw` (default: 1.0)
 
-# Additional build options
-Not critical for baseline operation.
-## Docker Build
-
-### Cross-compilation Setup
-
-```bash
-# Enable QEMU for cross-compilation
-docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-```
-
-### Build Multi-platform Image
-```bash
-docker buildx build \
-  --push \
-  --tag your-registry/wave-rover-controller:latest \
-  --platform linux/amd64,linux/arm64 .
-```
-
-### Build Single Platform
-```bash
-# For ARM64 (e.g., Raspberry Pi, Jetson)
-docker buildx build --platform linux/arm64 -t wave-rover-controller:arm64 .
-
-# For AMD64 (e.g., x86_64 systems)
-docker buildx build --platform linux/amd64 -t wave-rover-controller:amd64 .
-```
+---
 
 ## Hardware Setup
 
 ### UART Connection
-Communication is handled via the ESP32 USB. To connect to the ESP32, disconnect the bottom of the Rover, and plug in the USB C connector, as shown below. 
-![Wave Rover Robot](images/usb_serial_connection.jpg)
-### udev Rules Setup
+
+Connect the ESP32 USB at the bottom of the rover.
+
+![USB Connection](images/usb_serial_connection.jpg)
+
+> Make sure `/dev/ttyUSB0` is accessible (use `--group-add dialout` in Docker).
+
+---
+
+## Testing & Debugging
+
+### Manual Serial Testing
+
 ```bash
-# Copy the provided udev rules
-sudo cp 99-waverover.rules /etc/udev/rules.d/99-waverover.rules
-
-# Or create custom rules for USB serial devices
-sudo nano /etc/udev/rules.d/50-myusb.rules
-```
-
-Add the following content to `/etc/udev/rules.d/50-myusb.rules`:
-```
-KERNEL=="ttyUSB[0-9]*",MODE="0666"
-KERNEL=="ttyACM[0-9]*",MODE="0666"
-```
-
-After creating the rules, unplug and reconnect the device.
-
-## Testing and Debugging
-
-### Virtual Serial Port (for testing)
-```bash
-# Create virtual serial ports for testing
-socat -v -d -d PTY,raw,echo=0,b115200,cs8 PTY,raw,echo=0,b115200,cs8
-```
-
-### Manual Serial Communication
-```bash
-# Configure serial port
 stty -F /dev/ttyUSB0 115200
-
-# Monitor incoming data
 cat /dev/ttyUSB0
-
-# Send test commands
-echo -ne "{\"T\":-3}\n" > /dev/ttyUSB0  # Reset OLED
-echo -ne "{\"T\":1, \"L\":120, \"R\":120}\n" > /dev/ttyUSB0  # Move forward
+echo -ne '{"T":-3}\n' > /dev/ttyUSB0       # Reset OLED
+echo -ne '{"T":1,"L":120,"R":120}\n' > /dev/ttyUSB0  # Move forward
 ```
 
 ### ROS2 Testing
-```bash
-# Send velocity commands
-ros2 topic pub /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.1, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 1.0}}"
 
-# Monitor topics
-ros2 topic list
+On host or robot:
+
+```bash
+ros2 topic pub /cmd_vel geometry_msgs/msg/Twist "{linear: {x:0.1}, angular: {z:1.0}}"
 ros2 topic echo /cmd_vel
 ```
 
-## Protocol Reference
+---
 
-### JSON Command Format
-The robot expects JSON commands with the following structure:
+## JSON Protocol Reference
+
 ```json
 {
   "T": <command_type>,
@@ -223,39 +161,44 @@ The robot expects JSON commands with the following structure:
 ```
 
 ### Command Types
-- `-3`: OLED Reset
-- `0`: Emergency Stop
-- `1`: Speed Input (L: left motor, R: right motor, range: -255 to 255)
-- `3`: OLED Set (lineNum: row, Text: content)
+
+* `-3`: OLED Reset
+* `0`: Emergency Stop
+* `1`: Speed Input (`L`/`R`: -255 to 255)
+* `3`: OLED Set (`lineNum`, `Text`)
+
+---
 
 ## Troubleshooting
 
-### Common Issues
-1. **Permission denied on serial port**: Ensure udev rules are properly configured
-2. **No response from robot**: Check UART address and baud rate (115200)
-3. **Joypad not working**: Verify joypad is connected and permissions are set
-4. **Build errors**: Ensure all Qt dependencies are installed
+* **Serial Permission Denied**: Use `--group-add dialout` or set udev rules.
+* **No Response from Robot**: Check `/dev/ttyUSB0` and baud rate (115200).
+* **Joypad Not Working**: Verify connection and permissions.
+* **Build Errors**: Ensure Qt and ROS2 dependencies are installed.
 
-### Logs and Debugging
+Debugging tips:
+
 ```bash
-# Enable verbose logging
 export RCUTILS_LOGGING_SEVERITY_THRESHOLD=DEBUG
-
-# Check serial port permissions
 ls -la /dev/ttyUSB*
-
-# Monitor system logs
 journalctl -f
 ```
 
+---
+
 ## Contributing
 
-This project is based on the original work from [antlassagne/ros2-wave-rover](https://github.com/antlassagne/ros2-wave-rover) with the following enhancements:
-- Updated UART communication protocol
-- Added comprehensive joypad support
-- Improved error handling and logging
-- Enhanced documentation and configuration options
+Based on [antlassagne/ros2-wave-rover](https://github.com/antlassagne/ros2-wave-rover) with:
+
+* Updated UART communication
+* Joypad and keyboard support
+* Improved logging and debugging
+* Enhanced documentation
+
+---
 
 ## License
 
-MIT License - see package.xml for details.
+MIT License (see `package.xml` for details)
+
+```

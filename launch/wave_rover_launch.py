@@ -8,9 +8,9 @@ def generate_launch_description():
         DeclareLaunchArgument('enable_joypad', default_value='0'),
         DeclareLaunchArgument('UART_address', default_value='/dev/ttyUSB0'),
         Node(
-            package='grospote',
-            namespace='gros_pote',
-            executable='grospote-node',
+            package='wave_rover_controller',
+            namespace='wave_rover_controller',
+            executable='wave_rover_controller',
             name='robot',
             parameters=[
                 {"enable_joypad": LaunchConfiguration('enable_joypad')},

@@ -11,15 +11,19 @@
 
 RobotController::RobotController() {
     qDebug() << "v1.0.3";
-    _pUARTSerialPort = std::make_shared<UARTSerialPort>("/dev/pts/10", 1151200);
-    _pROS2Subscriber->declare_parameter("speed_scale", 0.3);
     _pROS2Subscriber = std::make_shared<ROS2Subscriber>();
+    _pROS2Subscriber->declare_parameter("speed_scale", 0.3);
+    
     _executor = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
     _execThread = std::make_unique<std::thread>(&RobotController::RunRos2Exectutor, this);
 
-    int enable_joypad = 0;
+    int enable_joypad = _pROS2Subscriber->get_parameter("enable_joypad").as_int();
     enable_joypad = _pROS2Subscriber->get_parameter("enable_joypad").as_int();
     std::string UART_address = _pROS2Subscriber->get_parameter("UART_address").as_string();
+    
+    if(UART_address.empty()) {
+        UART_address = "/dev/ttyUSB0";  // Default explicit path
+    }
 
     qDebug() << "Joypad enabled: " << enable_joypad;
     qDebug() << "UART Address: " << QString::fromStdString(UART_address);
@@ -40,7 +44,6 @@ RobotController::RobotController() {
     QString infos;
 
     qDebug() << "Initialization sequence...";
-    DisplayMessage(5, "", "Gros Pote", "se réveille", "");
 }
 
 RobotController::~RobotController() {
