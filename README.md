@@ -44,6 +44,10 @@ Run the ROS2 driver on the robot to handle UART communication:
 
 ```bash
 # If using Docker
+# build container:
+docker build -t wave-rover-controller .
+
+# run controller node
 docker run -it --rm \
   --device=/dev/ttyUSB0 \
   --group-add dialout \
