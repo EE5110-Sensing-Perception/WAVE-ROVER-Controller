@@ -77,6 +77,9 @@ Commands sent from the keyboard will be transmitted to the robot over the ROS2 n
 
 ---
 
+# WARNING!!!!!!
+Always turn off the controller before keyboard teleop. The robot will take off if you don't!
+
 ## Optional: Joypad Support
 
 Enable joystick control on the robot:

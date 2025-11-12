@@ -37,3 +37,4 @@ void ROS2Subscriber::LivenessCallback()
 //      RCLCPP_INFO(this->get_logger(), "Publishing: '%s'", message.data.c_str());
   _liveness_publisher->publish(message);
 }
+

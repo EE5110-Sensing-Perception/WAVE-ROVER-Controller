@@ -7,6 +7,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('enable_joypad', default_value='0'),
         DeclareLaunchArgument('UART_address', default_value='/dev/ttyUSB0'),
+        DeclareLaunchArgument('speed_scale', default_value='1.0'),  # 100% max speed (0.0-1.0)
         Node(
             package='wave_rover_controller',
             namespace='wave_rover_controller',
@@ -14,7 +15,9 @@ def generate_launch_description():
             name='robot',
             parameters=[
                 {"enable_joypad": LaunchConfiguration('enable_joypad')},
-                {"UART_address": LaunchConfiguration('UART_address')}
+                {"UART_address": LaunchConfiguration('UART_address')},
+                {"speed_scale": LaunchConfiguration('speed_scale')}
             ]
         )
     ])
+
