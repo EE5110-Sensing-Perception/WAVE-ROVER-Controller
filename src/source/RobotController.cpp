@@ -144,6 +144,14 @@ bool RobotController::SendCmdVel(geometry_msgs::msg::Twist::SharedPtr msg, bool 
     bool moving = (std::abs(_lastLinearX) > 1e-3f) || (std::abs(_lastAngularZ) > 1e-3f);
     _robotMoving.store(moving);
 
+    // Publish the processed velocity commands for other ROS2 nodes to use
+    // This publishes the smoothed velocity commands that are currently being executed
+    // Published even when rate-limited so other nodes can see the current state
+    auto executed_msg = std::make_shared<geometry_msgs::msg::Twist>();
+    executed_msg->linear.x = _lastLinearX;
+    executed_msg->angular.z = _lastAngularZ;
+    _pROS2Subscriber->PublishCmdVel(executed_msg);
+
     // Use teleop scaling (speed_scale remains a global cap)
     float speed_scale = _pROS2Subscriber->get_parameter("speed_scale").as_double();
 

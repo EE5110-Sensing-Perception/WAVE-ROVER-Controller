@@ -10,7 +10,11 @@ ROS2Subscriber::ROS2Subscriber() : rclcpp::Node("WaveRobotController") {
     _liveness_publisher = this->create_publisher<builtin_interfaces::msg::Time>("/liveness", 10);
     _liveness_timer = this->create_wall_timer(
     500ms, std::bind(&ROS2Subscriber::LivenessCallback, this));
+    
+    // Create publisher for executed velocity commands
+    _cmd_vel_publisher = this->create_publisher<geometry_msgs::msg::Twist>("/cmd_vel_executed", 10);
     qDebug() << "ROS2 Node initialized.";
+    qDebug() << "Velocity command publisher created on topic: /cmd_vel_executed";
 }
 
 ROS2Subscriber::~ROS2Subscriber(){
@@ -36,5 +40,12 @@ void ROS2Subscriber::LivenessCallback()
   message.nanosec = time.nanoseconds();
 //      RCLCPP_INFO(this->get_logger(), "Publishing: '%s'", message.data.c_str());
   _liveness_publisher->publish(message);
+}
+
+void ROS2Subscriber::PublishCmdVel(const geometry_msgs::msg::Twist::SharedPtr msg)
+{
+    if (_cmd_vel_publisher) {
+        _cmd_vel_publisher->publish(*msg);
+    }
 }
 
