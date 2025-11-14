@@ -10,9 +10,9 @@
 #include <iostream>
 
 RobotController::RobotController() {
-    qDebug() << "v1.0.3";
+    qDebug() << "v1.0.6 (XZ control, no smoothing)";
     _pROS2Subscriber = std::make_shared<ROS2Subscriber>();
-    _pROS2Subscriber->declare_parameter("speed_scale", 0.2);  // Default 20% max speed (was 0.05 = 5%)
+    _pROS2Subscriber->declare_parameter("speed_scale", 1.0);  // Default 100% max speed
 
     _executor = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
     _execThread = std::make_unique<std::thread>(&RobotController::RunRos2Exectutor, this);
@@ -32,9 +32,6 @@ RobotController::RobotController() {
     });
 
     _pUARTSerialPort = std::make_shared<UARTSerialPort>(QString::fromStdString(UART_address), 115200);
-    // Use QueuedConnection to ensure serial port operations happen in main thread
-    // QSerialPort uses QSocketNotifier which must be in the same thread as QObject
-    // Explicitly cast to QString overload to resolve ambiguity
     QObject::connect(this, &RobotController::SendRequestSync, _pUARTSerialPort.get(), 
                      static_cast<void (UARTSerialPort::*)(QString)>(&UARTSerialPort::sendRequestSync), 
                      Qt::QueuedConnection);
@@ -48,7 +45,6 @@ RobotController::RobotController() {
 
     _last_current_debug_row = -1;
 
-    // Store now in ms
     auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                       std::chrono::steady_clock::now().time_since_epoch()).count();
     _lastCmdTimeMs.store(now_ms);
@@ -56,7 +52,7 @@ RobotController::RobotController() {
     _robotMoving.store(false);
     _running.store(true);
 
-    // Watchdog thread - applies smooth decay when no commands received
+    // Watchdog thread - immediately stops robot if no command received
     _watchdogThread = std::thread([this]() {
         while (_running.load()) {
             auto now = std::chrono::steady_clock::now();
@@ -66,26 +62,20 @@ RobotController::RobotController() {
             long long last_ms = _lastCmdTimeMs.load();
             long long elapsed = now_ms - last_ms;
 
-            // If no commands received for a while, smoothly decay towards zero
             if (elapsed > CMD_TIMEOUT_MS) {
-                // Send zero target and let smoothing naturally bring values down
-                // This creates a smooth ramp-down instead of abrupt stop
-                auto decay_msg = std::make_shared<geometry_msgs::msg::Twist>();
-                decay_msg->linear.x = 0.0;
-                decay_msg->angular.z = 0.0;
-                SendCmdVel(decay_msg, /*update_timestamp=*/false);
-                
-                // Check if we're effectively stopped
-                bool moving = (std::abs(_lastLinearX) > 1e-3f) || (std::abs(_lastAngularZ) > 1e-3f);
-                _robotMoving.store(moving);
+                auto stop_msg = std::make_shared<geometry_msgs::msg::Twist>();
+                stop_msg->linear.x = 0.0;
+                stop_msg->angular.z = 0.0;
+                SendCmdVel(stop_msg, false);
+
+                _robotMoving.store(false);
             }
 
             std::this_thread::sleep_for(std::chrono::milliseconds(25));
         }
     });
 
-
-    qDebug() << "Initialization sequence...";
+    qDebug() << "Initialization sequence complete.";
 }
 
 RobotController::~RobotController() {
@@ -95,9 +85,8 @@ RobotController::~RobotController() {
     SendEmergencyStop();
     rclcpp::shutdown();
     _executor->cancel();
-    if (_execThread->joinable()) {
-        _execThread->join();
-    }
+    if (_execThread->joinable()) _execThread->join();
+
     qDebug() << "ROS2 Node shut down.";
 }
 
@@ -126,85 +115,52 @@ bool RobotController::DisplayRollingMessage(QString line){
     return SetOled(_last_current_debug_row, line);
 }
 
+// --- X/Z control without smoothing ---
 bool RobotController::SendCmdVel(geometry_msgs::msg::Twist::SharedPtr msg, bool update_timestamp) {
-    // Only update last-cmd time when this is a "real" incoming command (not watchdog stop)
     if (update_timestamp) {
         long long now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count();
         _lastCmdTimeMs.store(now_ms);
     }
 
-    // Exponential smoothing of target commands with improved responsiveness
-    float targetX = msg->linear.x;
-    float targetZ = msg->angular.z;
+    // Directly use incoming X/Z values (no smoothing)
+    float X = msg->linear.x;
+    float Z = msg->angular.z;
 
-    _lastLinearX = _lastLinearX + SMOOTHING_ALPHA * (targetX - _lastLinearX);
-    _lastAngularZ = _lastAngularZ + SMOOTHING_ALPHA * (targetZ - _lastAngularZ);
+    // Clamp values
+    float speed_scale = _pROS2Subscriber->get_parameter("speed_scale").as_double();
+    X = std::clamp(X, -1.0f, 1.0f) * speed_scale;
+    Z = std::clamp(Z, -1.0f, 2.0f) * speed_scale;
 
-    bool moving = (std::abs(_lastLinearX) > 1e-3f) || (std::abs(_lastAngularZ) > 1e-3f);
-    _robotMoving.store(moving);
+    _robotMoving.store((std::abs(X) > 1e-3f) || (std::abs(Z) > 1e-3f));
 
-    // Publish the processed velocity commands for other ROS2 nodes to use
-    // This publishes the smoothed velocity commands that are currently being executed
-    // Published even when rate-limited so other nodes can see the current state
+    // Publish for ROS2 visibility
     auto executed_msg = std::make_shared<geometry_msgs::msg::Twist>();
-    executed_msg->linear.x = _lastLinearX;
-    executed_msg->angular.z = _lastAngularZ;
+    executed_msg->linear.x = X;
+    executed_msg->angular.z = Z;
     _pROS2Subscriber->PublishCmdVel(executed_msg);
 
-    // Use teleop scaling (speed_scale remains a global cap)
-    float speed_scale = _pROS2Subscriber->get_parameter("speed_scale").as_double();
-
-    // Clamp input values for safety
-    float x = std::clamp(_lastLinearX, -1.0f, 1.0f);
-    float z = std::clamp(_lastAngularZ, -1.0f, 2.0f);
-
-    // Differential drive mapping: converts linear (x) and angular (z) velocities to wheel speeds
-    // Standard kinematic formula: left = x - z, right = x + z (for positive z = CCW rotation)
-    // Current implementation uses: left = x + z, right = x - z
-    // NOTE: If turn direction is wrong, swap the signs here or swap L/R assignment below
-    // Alternative formula (from provided code): left = x - z, right = x + z (then conditionally swapped)
-    // Motor controller expects values in range -1.0 to 1.0 (NOT -255 to 255)
-    float left = speed_scale * (x - z);
-    float right = speed_scale * (x + z);
-
-    // Clamp final motor values to valid range (-1.0 to 1.0)
-    left = std::clamp(left, -1.0f, 1.0f);
-    right = std::clamp(right, -1.0f, 1.0f);
-    
-    // Apply minimum threshold to avoid motor dead zone (motors may ignore very small values)
-    // If absolute value is below threshold, set to zero instead
-    const float MIN_MOTOR_THRESHOLD = 0.02f;  // Minimum value motor controller will respond to (2% of range)
-    if (std::abs(left) < MIN_MOTOR_THRESHOLD) left = 0.0f;
-    if (std::abs(right) < MIN_MOTOR_THRESHOLD) right = 0.0f;
-
-    // Rate-limit UART writes to avoid flooding the serial link
+    // Rate-limit UART writes
     long long now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count();
     long long last_send = _lastSendMs.load();
-    if (now_ms - last_send < SEND_MIN_INTERVAL_MS) {
-        // too soon: skip sending but internal state updated
-        return true;
-    }
+    if (now_ms - last_send < SEND_MIN_INTERVAL_MS) return true;
     _lastSendMs.store(now_ms);
 
     nlohmann::json message_json;
-    message_json["T"] = WAVE_ROVER_COMMAND_TYPE::SPEED_INPUT;
-    // Motor controller expects float values in range -1.0 to 1.0
-    message_json["L"] = left;
-    message_json["R"] = right;
+    message_json["T"] = ROS_CTRL; // ROS2 cmd_vel X/Z
+    message_json["X"] = X;
+    message_json["Z"] = Z;
 
-    // Debug output to verify speed values (can be removed in production)
-    qDebug() << "Speed cmd - L:" << left << "R:" << right 
-             << "(scale:" << speed_scale << "x:" << x << "z:" << z << ")";
+    qDebug() << "XZ cmd - X:" << X << " Z:" << Z;
 
     QString command = QString::fromStdString(message_json.dump()) + "\n";
     emit SendRequestSync(command);
+
     return true;
 }
 
-
-
+// --- Joystick ---
 void RobotController::JoypadCommandReceived(TimestampedDouble t1, TimestampedDouble t2) {
     auto msg = std::make_shared<geometry_msgs::msg::Twist>();
     msg->linear.x = t1.value;
@@ -212,10 +168,10 @@ void RobotController::JoypadCommandReceived(TimestampedDouble t1, TimestampedDou
     SendCmdVel(msg);
 }
 
+// --- Generic Commands ---
 bool RobotController::SendGenericCmd(WAVE_ROVER_COMMAND_TYPE command, QString& response){
     nlohmann::json message_json = {};
     message_json["T"] = command;
-    // FIX: Add newline to generic commands too
     QString cmd = QString::fromStdString(message_json.dump()) + "\n";
     return _pUARTSerialPort->getResponseSync(cmd, response);
 }
@@ -223,7 +179,6 @@ bool RobotController::SendGenericCmd(WAVE_ROVER_COMMAND_TYPE command, QString& r
 bool RobotController::SendGenericCmd(WAVE_ROVER_COMMAND_TYPE command){
     nlohmann::json message_json = {};
     message_json["T"] = command;
-    // FIX: Add newline to generic commands too
     QString cmd = QString::fromStdString(message_json.dump()) + "\n";
     _pUARTSerialPort->sendRequestSync(cmd);
     return true;
@@ -249,18 +204,16 @@ bool RobotController::EmergencyStop(){
     return SendGenericCmd(WAVE_ROVER_COMMAND_TYPE::EMERGENCY_STOP);
 }
 
+// --- OLED ---
 bool RobotController::SetOled(int row, QString content){
-    if(row > 3)
-    {
+    if(row > 3) {
         qDebug() << "Cannot print anything on OLED row " << row;
         return false;
     }
-
     nlohmann::json message_json = {};
     message_json["T"] = WAVE_ROVER_COMMAND_TYPE::OLED_SET;
     message_json["lineNum"] = row;
     message_json["Text"] = content.toStdString();
-    // FIX: Add newline to OLED commands too
     QString cmd = QString::fromStdString(message_json.dump()) + "\n";
     _pUARTSerialPort->sendRequestSync(cmd);
     return true;
@@ -270,26 +223,14 @@ bool RobotController::ResetOled() {
     return SendGenericCmd(WAVE_ROVER_COMMAND_TYPE::OLED_DEFAULT);
 }
 
+// --- Info queries ---
 bool RobotController::GetInformation(INFO_TYPE info_type, QString& response){
     WAVE_ROVER_COMMAND_TYPE target_type;
-    switch (info_type)
-    {
-    case INFO_TYPE::IMU:
-        target_type = WAVE_ROVER_COMMAND_TYPE::IMU_INFO;
-        break;
-
-    case INFO_TYPE::DEVICE:
-        target_type = WAVE_ROVER_COMMAND_TYPE::DEVICE_INFO;
-        break;
-
-    case INFO_TYPE::INA219:
-        target_type = WAVE_ROVER_COMMAND_TYPE::INA219_INFO;
-        break;
-
-    case INFO_TYPE::WIFI:
-        target_type = WAVE_ROVER_COMMAND_TYPE::WIFI_INFO;
-        break;
+    switch (info_type) {
+        case INFO_TYPE::IMU: target_type = WAVE_ROVER_COMMAND_TYPE::IMU_INFO; break;
+        case INFO_TYPE::DEVICE: target_type = WAVE_ROVER_COMMAND_TYPE::DEVICE_INFO; break;
+        case INFO_TYPE::INA219: target_type = WAVE_ROVER_COMMAND_TYPE::INA219_INFO; break;
+        case INFO_TYPE::WIFI: target_type = WAVE_ROVER_COMMAND_TYPE::WIFI_INFO; break;
     }
     return SendGenericCmd(target_type, response);
 }
-

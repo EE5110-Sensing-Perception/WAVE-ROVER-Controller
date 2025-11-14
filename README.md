@@ -52,11 +52,15 @@ docker run -it --rm \
   --device=/dev/ttyUSB0 \
   --group-add dialout \
   --net=host \
-  wave-rover-controller \
-  ros2 launch wave_rover_controller wave_rover_launch.py UART_address:="/dev/ttyUSB0"
+  wave-rover-controller
+
+export ROS_DOMAIN_ID="insert your domain id here"
+  
+ros2 launch wave_rover_controller wave_rover_launch.py UART_address:="/dev/ttyUSB0"
 ```
 
-**Note:** `--group-add dialout` ensures serial port access without modifying udev rules.
+**Notes:** 
+- `--group-add dialout` ensures serial port access without modifying udev rules.
 The robot will subscribe to `/cmd_vel` and execute motor commands.
 
 ### 2. Host PC (Keyboard Teleop)

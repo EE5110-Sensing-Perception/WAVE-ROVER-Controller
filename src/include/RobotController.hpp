@@ -58,9 +58,13 @@ public slots:
         // last time we actually wrote to serial (ms)
         std::atomic<long long> _lastSendMs{0};
 
-        // Motion smoothing state
+        // Motion smoothing state (twist-level)
         float _lastLinearX{0.0f};
         float _lastAngularZ{0.0f};
+
+        // Wheel-level last outputs (per-wheel ramping)
+        float _lastLeft{0.0f};
+        float _lastRight{0.0f};
 
         // Flags and thread
         std::atomic<bool> _robotMoving{false};
@@ -72,8 +76,20 @@ public slots:
         static constexpr int SEND_MIN_INTERVAL_MS = 50;   // rate limit: ~20 Hz (smoother updates)
         static constexpr float SMOOTHING_ALPHA = 0.15f;   // 0..1 higher = more responsive, still smooth
 
+        // Wheel-level acceleration limits (units: normalized motor value per second)
+        // Tune these: lower = smoother/less aggressive, higher = snappier
+        float MAX_WHEEL_DELTA_PER_SEC = 1.0f;            // default general
+        float MAX_WHEEL_DELTA_TURNING_PER_SEC = 1.8f;    // allowed when in-place turning
+
+        // In-place turning scale (reduce overall speed when linear.x ~= 0)
+        float TURNING_SPEED_SCALE = 0.8f;
+        float INPLACE_LINEAR_EPS = 1e-3f; // threshold to treat as in-place turn
+
+        // Motor deadzone threshold
+        static constexpr float MIN_MOTOR_THRESHOLD = 0.02f;  // 2% of range
+
+        // Debug / config could be promoted to ros params if desired
+        
         // --------------------------------
 
 };
-
-
