@@ -75,8 +75,12 @@ docker build -t wave-rover-host .
 docker run -it --rm --privileged --net=host --group-add dialout wave-rover-host
 
 # Launch keyboard teleop pointing to the robot's ROS2 network
+# note: the ros-args for speed and turn are recommended as a reasonable starting point
 export ROS_DOMAIN_ID=<match_robot_domain>
-ros2 run teleop_twist_keyboard teleop_twist_keyboard
+ros2 run teleop_twist_keyboard teleop_twist_keyboard \
+  --ros-args \
+  -p speed:=0.22 \
+  -p turn:=0.22
 ```
 
 Commands sent from the keyboard will be transmitted to the robot over the ROS2 network.
@@ -84,6 +88,8 @@ Commands sent from the keyboard will be transmitted to the robot over the ROS2 n
 **note: ensure you have clicked on the teleop terminal, otherwise commands won't be sent**
 
 ---
+### Tuning speed via teleop_twist_keyboard
+teleop_twist_keyboard offers the option to change the linear speed and turn rate of the robot. For the wave-rover, this should be done with caution. The motor controlled on the wave-rover clamps the range of values between +/- 0.5. If the speed command from teleop_twist exceeds 0.5, it will be clamped at 0.5, and this can affect the accuracy of telemetry or adversely affect turning performance.
 
 # WARNING!!!!!!
 Always turn off the controller before keyboard teleop. The robot will take off if you don't!

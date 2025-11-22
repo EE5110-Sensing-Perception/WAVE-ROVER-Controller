@@ -148,14 +148,33 @@ bool RobotController::SendCmdVel(geometry_msgs::msg::Twist::SharedPtr msg, bool 
     _lastSendMs.store(now_ms);
 
     nlohmann::json message_json;
-    message_json["T"] = ROS_CTRL; // ROS2 cmd_vel X/Z
-    message_json["X"] = X;
-    message_json["Z"] = Z;
+    //message_json["T"] = WAVE_ROVER_COMMAND_TYPE::ROS_CTRL; // ROS2 cmd_vel X/Z
+    //message_json["X"] = X;
+    //message_json["Z"] = Z;
 
-    qDebug() << "XZ cmd - X:" << X << " Z:" << Z;
+    //qDebug() << "XZ cmd - X:" << X << " Z:" << Z;
 
+    float wheel_separation = 2.0f; // 16cm wheel separation
+
+    message_json["T"] = WAVE_ROVER_COMMAND_TYPE::SPEED_INPUT;
+    float left_speed = X - Z * wheel_separation / 2;
+    float right_speed = X + Z * wheel_separation / 2;
+    left_speed = std::clamp(left_speed, -0.5f, 0.5f);
+    right_speed = std::clamp(right_speed, -0.5f, 0.5f);
+
+    // boost rotation if X is small
+    if (std::abs(X) < 1e-3f && std::abs(Z) > 1e-3f) {
+        float spin_boost = 0.25f;       // tune
+        left_speed  = (left_speed < 0) ? left_speed - spin_boost : left_speed + spin_boost;
+        right_speed = (right_speed < 0)? right_speed - spin_boost : right_speed + spin_boost;
+    }
+
+    message_json["L"] = left_speed;
+    message_json["R"] = right_speed;
     QString command = QString::fromStdString(message_json.dump()) + "\n";
     emit SendRequestSync(command);
+
+    // qDebug() << "Speed input - L:" << left_speed << " R:" << right_speed;
 
     return true;
 }
