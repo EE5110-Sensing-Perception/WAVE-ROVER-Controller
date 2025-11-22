@@ -148,11 +148,6 @@ bool RobotController::SendCmdVel(geometry_msgs::msg::Twist::SharedPtr msg, bool 
     _lastSendMs.store(now_ms);
 
     nlohmann::json message_json;
-    //message_json["T"] = WAVE_ROVER_COMMAND_TYPE::ROS_CTRL; // ROS2 cmd_vel X/Z
-    //message_json["X"] = X;
-    //message_json["Z"] = Z;
-
-    //qDebug() << "XZ cmd - X:" << X << " Z:" << Z;
 
     float wheel_separation = 2.0f; // 16cm wheel separation
 
