@@ -1,0 +1,27 @@
+# Gamepad teleop — load with joy_linux + teleop_twist_joy:
+#   CONFIG=$(ros2 pkg prefix wave_rover_controller)/share/wave_rover_controller/config/teleop_joy.yaml
+#   ros2 run joy_linux joy_linux_node --ros-args --params-file "$CONFIG"
+#   ros2 run teleop_twist_joy teleop_node --ros-args --params-file "$CONFIG"
+
+joy_node:
+  ros__parameters:
+    dev: "/dev/input/js0"
+    deadzone: 0.01
+    autorepeat_rate: 20.0
+
+teleop_twist_joy_node:
+  ros__parameters:
+    # Microntek USB Joystick — left stick drive
+    axis_linear:
+      x: 1
+    axis_angular:
+      yaw: 0
+    scale_linear:
+      x: 0.3
+    scale_angular:
+      yaw: 1.0
+    require_enable_button: true
+    enable_button: 5
+    enable_turbo_button: -1
+    qos_overrides./cmd_vel.publisher.reliability: reliable
+    qos_overrides./cmd_vel.publisher.durability: volatile

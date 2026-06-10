@@ -1,73 +1,72 @@
 #include <RobotController.hpp>
+
 #include <UARTSerialPort.hpp>
 #include <ROS2Subscriber.hpp>
 #include <json.hpp>
 #include <RoverCommands.hpp>
-#include <QDebug>
+
 #include <algorithm>
-#include <QtConcurrent/QtConcurrent>
-#include <JoypadController.hpp>
 #include <iostream>
 
-RobotController::RobotController() {
-    qDebug() << "v1.0.6 (XZ control, no smoothing)";
+RobotController::RobotController()
+{
+    RCLCPP_INFO(rclcpp::get_logger("wave_rover_controller"), "v2.0.0 (cmd_vel driver)");
+
     _pROS2Subscriber = std::make_shared<ROS2Subscriber>();
-    _pROS2Subscriber->declare_parameter("speed_scale", 1.0);  // Default 100% max speed
 
     _executor = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
     _execThread = std::make_unique<std::thread>(&RobotController::RunRos2Exectutor, this);
 
-    int enable_joypad = _pROS2Subscriber->get_parameter("enable_joypad").as_int();
-    std::string UART_address = _pROS2Subscriber->get_parameter("UART_address").as_string();
-    
-    if(UART_address.empty()) {
-        UART_address = "/dev/ttyUSB0";
+    std::string uart_address = _pROS2Subscriber->get_parameter("UART_address").as_string();
+
+    _wheel_separation = static_cast<float>(_pROS2Subscriber->get_parameter("wheel_separation").as_double());
+    _spin_boost = static_cast<float>(_pROS2Subscriber->get_parameter("spin_boost").as_double());
+    _motor_speed_max = static_cast<float>(_pROS2Subscriber->get_parameter("motor_speed_max").as_double());
+    _linear_clamp_max = static_cast<float>(_pROS2Subscriber->get_parameter("linear_clamp_max").as_double());
+    _angular_clamp_max = static_cast<float>(_pROS2Subscriber->get_parameter("angular_clamp_max").as_double());
+    _cmd_timeout_ms = _pROS2Subscriber->get_parameter("cmd_timeout_ms").as_int();
+    _send_min_interval_ms = _pROS2Subscriber->get_parameter("send_min_interval_ms").as_int();
+
+    if (uart_address.empty()) {
+        uart_address = "/dev/ttyUSB0";
     }
 
-    qDebug() << "Joypad enabled: " << enable_joypad;
-    qDebug() << "UART Address: " << QString::fromStdString(UART_address);
+    const float speed_scale = static_cast<float>(_pROS2Subscriber->get_parameter("speed_scale").as_double());
+    RCLCPP_INFO(
+        _pROS2Subscriber->get_logger(),
+        "Config: UART=%s speed_scale=%.2f wheel_separation=%.3f "
+        "spin_boost=%.2f motor_max=%.2f linear_clamp=%.2f angular_clamp=%.2f",
+        uart_address.c_str(), speed_scale, _wheel_separation, _spin_boost,
+        _motor_speed_max, _linear_clamp_max, _angular_clamp_max);
 
-    _pROS2Subscriber->SubscribeToTopic("/cmd_vel", [&](const geometry_msgs::msg::Twist::SharedPtr msg){
+    _pROS2Subscriber->SubscribeToTopic("/cmd_vel", [this](const geometry_msgs::msg::Twist::SharedPtr msg) {
         SendCmdVel(msg);
     });
 
-    _pUARTSerialPort = std::make_shared<UARTSerialPort>(QString::fromStdString(UART_address), 115200);
-    QObject::connect(this, &RobotController::SendRequestSync, _pUARTSerialPort.get(), 
-                     static_cast<void (UARTSerialPort::*)(QString)>(&UARTSerialPort::sendRequestSync), 
-                     Qt::QueuedConnection);
-
-    if(enable_joypad) {
-        _pJoypadController = std::make_shared<JoypadController>();
-        QObject::connect(_pJoypadController.get(), SIGNAL(JoypadCommandAvailable(TimestampedDouble, TimestampedDouble)),
-                         this, SLOT(JoypadCommandReceived(TimestampedDouble, TimestampedDouble)));
-        _pJoypadController->start();
-    }
+    _pUARTSerialPort = std::make_shared<UARTSerialPort>(uart_address, 115200);
 
     _last_current_debug_row = -1;
 
-    auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                      std::chrono::steady_clock::now().time_since_epoch()).count();
+    const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
     _lastCmdTimeMs.store(now_ms);
     _lastSendMs.store(0);
     _robotMoving.store(false);
     _running.store(true);
 
-    // Watchdog thread - immediately stops robot if no command received
     _watchdogThread = std::thread([this]() {
         while (_running.load()) {
-            auto now = std::chrono::steady_clock::now();
-            long long now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                now.time_since_epoch()).count();
+            const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
 
-            long long last_ms = _lastCmdTimeMs.load();
-            long long elapsed = now_ms - last_ms;
+            const long long last_ms = _lastCmdTimeMs.load();
+            const long long elapsed = now_ms - last_ms;
 
-            if (elapsed > CMD_TIMEOUT_MS) {
+            if (elapsed > _cmd_timeout_ms) {
                 auto stop_msg = std::make_shared<geometry_msgs::msg::Twist>();
                 stop_msg->linear.x = 0.0;
                 stop_msg->angular.z = 0.0;
                 SendCmdVel(stop_msg, false);
-
                 _robotMoving.store(false);
             }
 
@@ -75,29 +74,44 @@ RobotController::RobotController() {
         }
     });
 
-    qDebug() << "Initialization sequence complete.";
+    RCLCPP_INFO(_pROS2Subscriber->get_logger(), "Subscribed to /cmd_vel — ready for joystick, keyboard, or autonomy.");
 }
 
-RobotController::~RobotController() {
+RobotController::~RobotController()
+{
     _running = false;
-    if (_watchdogThread.joinable()) _watchdogThread.join();
+    if (_watchdogThread.joinable()) {
+        _watchdogThread.join();
+    }
 
     SendEmergencyStop();
-    rclcpp::shutdown();
-    _executor->cancel();
-    if (_execThread->joinable()) _execThread->join();
 
-    qDebug() << "ROS2 Node shut down.";
+    if (_executor) {
+        _executor->cancel();
+    }
+    if (_execThread && _execThread->joinable()) {
+        _execThread->join();
+    }
+
+    if (rclcpp::ok()) {
+        rclcpp::shutdown();
+    }
+
+    RCLCPP_INFO(rclcpp::get_logger("wave_rover_controller"), "ROS2 node shut down.");
 }
 
-void RobotController::RunRos2Exectutor() {
+void RobotController::RunRos2Exectutor()
+{
     std::cout << "STARTING EXECUTOR" << std::endl;
     _executor->add_node(_pROS2Subscriber);
     _executor->spin();
     _executor->remove_node(_pROS2Subscriber);
 }
 
-bool RobotController::DisplayMessage(int seconds, QString line_1, QString line_2, QString line_3, QString line_4){
+bool RobotController::DisplayMessage(
+    int seconds, const std::string & line_1, const std::string & line_2,
+    const std::string & line_3, const std::string & line_4)
+{
     ResetOled();
     SetOled(0, line_1);
     SetOled(1, line_2);
@@ -108,137 +122,134 @@ bool RobotController::DisplayMessage(int seconds, QString line_1, QString line_2
     return ResetOled();
 }
 
-bool RobotController::DisplayRollingMessage(QString line){
+bool RobotController::DisplayRollingMessage(const std::string & line)
+{
     ResetOled();
     _last_current_debug_row++;
-    if(_last_current_debug_row > 3) _last_current_debug_row = 0;
+    if (_last_current_debug_row > 3) {
+        _last_current_debug_row = 0;
+    }
     return SetOled(_last_current_debug_row, line);
 }
 
-// --- X/Z control without smoothing ---
-bool RobotController::SendCmdVel(geometry_msgs::msg::Twist::SharedPtr msg, bool update_timestamp) {
+bool RobotController::SendCmdVel(geometry_msgs::msg::Twist::SharedPtr msg, bool update_timestamp)
+{
     if (update_timestamp) {
-        long long now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        const long long now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count();
         _lastCmdTimeMs.store(now_ms);
     }
 
-    // Directly use incoming X/Z values (no smoothing)
-    float X = msg->linear.x;
-    float Z = msg->angular.z;
+    float X = static_cast<float>(msg->linear.x);
+    float Z = static_cast<float>(msg->angular.z);
 
-    // Clamp values
-    float speed_scale = _pROS2Subscriber->get_parameter("speed_scale").as_double();
-    X = std::clamp(X, -1.0f, 1.0f) * speed_scale;
-    Z = std::clamp(Z, -1.0f, 2.0f) * speed_scale;
+    const float speed_scale = static_cast<float>(_pROS2Subscriber->get_parameter("speed_scale").as_double());
+    X = std::clamp(X, -_linear_clamp_max, _linear_clamp_max) * speed_scale;
+    Z = std::clamp(Z, -1.0f, _angular_clamp_max) * speed_scale;
 
     _robotMoving.store((std::abs(X) > 1e-3f) || (std::abs(Z) > 1e-3f));
 
-    // Publish for ROS2 visibility
     auto executed_msg = std::make_shared<geometry_msgs::msg::Twist>();
     executed_msg->linear.x = X;
     executed_msg->angular.z = Z;
     _pROS2Subscriber->PublishCmdVel(executed_msg);
 
-    // Rate-limit UART writes
-    long long now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count();
-    long long last_send = _lastSendMs.load();
-    if (now_ms - last_send < SEND_MIN_INTERVAL_MS) return true;
+    const long long now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    const long long last_send = _lastSendMs.load();
+    if (now_ms - last_send < _send_min_interval_ms) {
+        return true;
+    }
     _lastSendMs.store(now_ms);
 
     nlohmann::json message_json;
 
-    float wheel_separation = 2.0f; // 16cm wheel separation
-
     message_json["T"] = WAVE_ROVER_COMMAND_TYPE::SPEED_INPUT;
-    float left_speed = X - Z * wheel_separation / 2;
-    float right_speed = X + Z * wheel_separation / 2;
-    left_speed = std::clamp(left_speed, -0.5f, 0.5f);
-    right_speed = std::clamp(right_speed, -0.5f, 0.5f);
+    float left_speed = X - Z * _wheel_separation / 2;
+    float right_speed = X + Z * _wheel_separation / 2;
+    left_speed = std::clamp(left_speed, -_motor_speed_max, _motor_speed_max);
+    right_speed = std::clamp(right_speed, -_motor_speed_max, _motor_speed_max);
 
-    // boost rotation if X is small
     if (std::abs(X) < 1e-3f && std::abs(Z) > 1e-3f) {
-        float spin_boost = 0.25f;       // tune
-        left_speed  = (left_speed < 0) ? left_speed - spin_boost : left_speed + spin_boost;
-        right_speed = (right_speed < 0)? right_speed - spin_boost : right_speed + spin_boost;
+        left_speed = (left_speed < 0) ? left_speed - _spin_boost : left_speed + _spin_boost;
+        right_speed = (right_speed < 0) ? right_speed - _spin_boost : right_speed + _spin_boost;
     }
 
     message_json["L"] = left_speed;
     message_json["R"] = right_speed;
-    QString command = QString::fromStdString(message_json.dump()) + "\n";
-    emit SendRequestSync(command);
 
-    // qDebug() << "Speed input - L:" << left_speed << " R:" << right_speed;
+    const std::string command = message_json.dump() + "\n";
+    _pUARTSerialPort->sendRequestSync(command);
 
     return true;
 }
 
-// --- Joystick ---
-void RobotController::JoypadCommandReceived(TimestampedDouble t1, TimestampedDouble t2) {
-    auto msg = std::make_shared<geometry_msgs::msg::Twist>();
-    msg->linear.x = t1.value;
-    msg->angular.z = t2.value;
-    SendCmdVel(msg);
-}
-
-// --- Generic Commands ---
-bool RobotController::SendGenericCmd(WAVE_ROVER_COMMAND_TYPE command, QString& response){
+bool RobotController::SendGenericCmd(WAVE_ROVER_COMMAND_TYPE command, std::string & response)
+{
     nlohmann::json message_json = {};
     message_json["T"] = command;
-    QString cmd = QString::fromStdString(message_json.dump()) + "\n";
+    const std::string cmd = message_json.dump() + "\n";
     return _pUARTSerialPort->getResponseSync(cmd, response);
 }
 
-bool RobotController::SendGenericCmd(WAVE_ROVER_COMMAND_TYPE command){
+bool RobotController::SendGenericCmd(WAVE_ROVER_COMMAND_TYPE command)
+{
     nlohmann::json message_json = {};
     message_json["T"] = command;
-    QString cmd = QString::fromStdString(message_json.dump()) + "\n";
+    const std::string cmd = message_json.dump() + "\n";
     _pUARTSerialPort->sendRequestSync(cmd);
     return true;
 }
 
-bool RobotController::EnableWifiHotspot(){
+bool RobotController::EnableWifiHotspot()
+{
     return SendGenericCmd(WAVE_ROVER_COMMAND_TYPE::WIFI_AP_DEFAULT);
 }
 
-bool RobotController::ScanWifi(){
+bool RobotController::ScanWifi()
+{
     return SendGenericCmd(WAVE_ROVER_COMMAND_TYPE::WIFI_SCAN);
 }
 
-bool RobotController::DisableWifi(){
+bool RobotController::DisableWifi()
+{
     return SendGenericCmd(WAVE_ROVER_COMMAND_TYPE::WIFI_OFF);
 }
 
-bool RobotController::SendEmergencyStop() {
+bool RobotController::SendEmergencyStop()
+{
     return SendGenericCmd(WAVE_ROVER_COMMAND_TYPE::EMERGENCY_STOP);
 }
 
-bool RobotController::EmergencyStop(){
+bool RobotController::EmergencyStop()
+{
     return SendGenericCmd(WAVE_ROVER_COMMAND_TYPE::EMERGENCY_STOP);
 }
 
-// --- OLED ---
-bool RobotController::SetOled(int row, QString content){
-    if(row > 3) {
-        qDebug() << "Cannot print anything on OLED row " << row;
+bool RobotController::SetOled(int row, const std::string & content)
+{
+    if (row > 3) {
+        RCLCPP_WARN(
+            _pROS2Subscriber->get_logger(), "Cannot print anything on OLED row %d", row);
         return false;
     }
+
     nlohmann::json message_json = {};
     message_json["T"] = WAVE_ROVER_COMMAND_TYPE::OLED_SET;
     message_json["lineNum"] = row;
-    message_json["Text"] = content.toStdString();
-    QString cmd = QString::fromStdString(message_json.dump()) + "\n";
+    message_json["Text"] = content;
+    const std::string cmd = message_json.dump() + "\n";
     _pUARTSerialPort->sendRequestSync(cmd);
     return true;
 }
 
-bool RobotController::ResetOled() {
+bool RobotController::ResetOled()
+{
     return SendGenericCmd(WAVE_ROVER_COMMAND_TYPE::OLED_DEFAULT);
 }
 
-// --- Info queries ---
-bool RobotController::GetInformation(INFO_TYPE info_type, QString& response){
+bool RobotController::GetInformation(INFO_TYPE info_type, std::string & response)
+{
     WAVE_ROVER_COMMAND_TYPE target_type;
     switch (info_type) {
         case INFO_TYPE::IMU: target_type = WAVE_ROVER_COMMAND_TYPE::IMU_INFO; break;

@@ -1,0 +1,16 @@
+# Wave Rover driver — subscribes to /cmd_vel only.
+# Edit diff-drive tuning here, then restart the driver.
+#
+# Gamepad teleop: config/teleop_joy.yaml (run joy nodes separately; see README)
+
+/**:
+  ros__parameters:
+    UART_address: "/dev/ttyUSB0"
+    speed_scale: 1.0
+    wheel_separation: 0.125
+    spin_boost: 0.0
+    motor_speed_max: 1.0
+    linear_clamp_max: 1.0
+    angular_clamp_max: 2.0
+    cmd_timeout_ms: 500
+    send_min_interval_ms: 50

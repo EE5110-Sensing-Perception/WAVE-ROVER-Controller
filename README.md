@@ -1,221 +1,186 @@
 # Wave Rover Controller
 
 ROS 2 driver for the Waveshare Wave Rover.  
-Forked from [antlassagne/ros2-wave-rover](https://github.com/antlassagne/ros2-wave-rover), with key updates:
+Forked from [antlassagne/ros2-wave-rover](https://github.com/antlassagne/ros2-wave-rover).
 
-- Updated UART communication
-- Added keyboard and joypad control support
-- Improved debugging and error handling
-
-This package should also work with other Waveshare robots using JSON/UART communication (Offroad UGV, etc.).
+The driver subscribes to **`/cmd_vel`** and converts `geometry_msgs/Twist` to motor commands over UART.  
+Joystick, keyboard, and autonomous stacks all publish to `/cmd_vel` — the driver does not care which.
 
 ![Wave Rover Robot](images/wave-rover-1.jpg)
 
 ---
 
-## Features
+## Architecture
 
-- **ROS2 Integration**: Subscribes to `/cmd_vel` and converts `geometry_msgs/Twist` commands to motor control.
-- **UART Communication**: JSON-based protocol with the robot’s ESP32.
-- **Keyboard & Joypad Support**: Manual control from a remote PC or onboard joystick.
-- **OLED Display Control**: Display messages and status on the robot’s OLED.
-- **WiFi Management**: Configure the robot’s hotspot and scan networks.
-- **Emergency Stop**: Safety mechanism for immediate halt.
-- **Multi-threaded Architecture**: Separate threads for ROS2 execution and UART communication.
-- **Configurable Parameters**: Adjustable speed scaling and UART device path.
+Driver and teleop are separate processes:
 
----
-
-## Package Information
-
-- **Package Name**: `wave_rover_controller`
-- **Version**: 0.0.0
-- **License**: MIT
-- **Maintainer**: briandeegan82 (brian.deegan82@gmail.com)
-
----
-
-## Deployment Setup (Preferred)
-Clone this repo onto both remote device and host PC. Run teleop from the host pc, and the controller on the remote device.
-
-### 1. Robot (Driver & UART)
-
-Run the ROS2 driver on the robot to handle UART communication:
-
-```bash
-# If using Docker
-# build container:
-docker build -t wave-rover-controller .
-
-# run controller node
-docker run -it --rm \
-  --device=/dev/ttyUSB0 \
-  --group-add dialout \
-  --net=host \
-  wave-rover-controller
-
-export ROS_DOMAIN_ID="insert your domain id here"
-  
-ros2 launch wave_rover_controller wave_rover_launch.py UART_address:="/dev/ttyUSB0"
+```
+Terminal 1 (RB3)                    Terminal 2 (RB3 or host PC)
+┌────────────────────────────┐      ┌─────────────────────────┐
+│ wave_rover_launch.py       │      │ joy_linux_node          │
+│   → wave_rover_controller  │      │ teleop_twist_joy        │
+│       UART → ESP32 motors  │      │   (loads teleop_joy.yaml)│
+└─────────────┬──────────────┘      └────────────┬────────────┘
+              │  /cmd_vel  ◄──────────────────────┘
+              │
+              │  /cmd_vel  ◄── nav2 / your stack (autonomy)
 ```
 
-**Notes:** 
-- `--group-add dialout` ensures serial port access without modifying udev rules.
-The robot will subscribe to `/cmd_vel` and execute motor commands.
-
-### 2. Host PC (Keyboard Teleop)
-
-On your host PC, run ROS2 keyboard teleoperation:
-
-```bash
-# build and run the same docker container on your host PC
-docker build -t wave-rover-host .
-
-# run the container
-docker run -it --rm --privileged --net=host --group-add dialout wave-rover-host
-
-# Launch keyboard teleop pointing to the robot's ROS2 network
-# note: the ros-args for speed and turn are recommended as a reasonable starting point
-export ROS_DOMAIN_ID=<match_robot_domain>
-ros2 run teleop_twist_keyboard teleop_twist_keyboard \
-  --ros-args \
-  -p speed:=0.22 \
-  -p turn:=0.22
-```
-
-Commands sent from the keyboard will be transmitted to the robot over the ROS2 network.
-
-**note: ensure you have clicked on the teleop terminal, otherwise commands won't be sent**
+Run gamepad teleop **on whichever machine has the USB device** (RB3 or host PC).  
+Use the same `ROS_DOMAIN_ID` so `/cmd_vel` reaches the robot.
 
 ---
-### Tuning speed via teleop_twist_keyboard
-teleop_twist_keyboard offers the option to change the linear speed and turn rate of the robot. For the wave-rover, this should be done with caution. The motor controlled on the wave-rover clamps the range of values between +/- 0.5. If the speed command from teleop_twist exceeds 0.5, it will be clamped at 0.5, and this can affect the accuracy of telemetry or adversely affect turning performance.
 
-# WARNING!!!!!!
-Always turn off the controller before keyboard teleop. The robot will take off if you don't!
-
-## Optional: Joypad Support
-
-Enable joystick control on the robot:
+## Quick start (RB3)
 
 ```bash
-ros2 launch wave_rover_controller wave_rover_launch.py enable_joypad:=1 UART_address:="/dev/ttyUSB0"
+# Host: cross-compile and deploy (see Cross-compile section below)
+cd WAVE-ROVER-Controller
+./scripts/build.sh
+./scripts/deploy.sh root@<rb3-ip>
+
+# RB3: extract tarball, then:
+mount -o remount,rw /usr
+tar --no-overwrite-dir --no-same-owner -zxf /opt/wave_rover_controller.tar.gz -C /usr/
+source /usr/share/qirp-setup.sh
+
+# Terminal 1 — driver
+ros2 launch wave_rover_controller wave_rover_launch.py
 ```
 
 ---
 
-## ROS2 Topics
+## Gamepad teleop
 
-### Subscribed Topics
-
-* `/cmd_vel` (`geometry_msgs/msg/Twist`): Velocity commands for robot movement.
-
-### Published Topics
-
-* None (control-only node).
-
----
-
-## Launch Parameters
-
-### `wave_rover_launch.py`
-
-* `enable_joypad` (default: 0): Enable joystick control.
-* `UART_address` (default: `/dev/ttyUSB0`): Serial device path.
-
-### `control_launch.py`
-
-* `require_enable_button` (default: False)
-* `axis_linear.x` (default: 4)
-* `axis_angular.yaw` (default: 0)
-* `scale_linear.x` (default: 1.0)
-* `scale_angular.yaw` (default: 1.0)
-
----
-
-## Hardware Setup
-
-### UART Connection
-
-Connect the ESP32 USB at the bottom of the rover.
-
-![USB Connection](images/usb_serial_connection.jpg)
-
-> Make sure `/dev/ttyUSB0` is accessible (use `--group-add dialout` in Docker).
-
----
-
-## Testing & Debugging
-
-### Manual Serial Testing
+Start the driver first, then run the joy nodes in a **separate terminal**. Both nodes load settings from the same `teleop_joy.yaml`:
 
 ```bash
-stty -F /dev/ttyUSB0 115200
-cat /dev/ttyUSB0
-echo -ne '{"T":-3}\n' > /dev/ttyUSB0       # Reset OLED
-echo -ne '{"T":1,"L":120,"R":120}\n' > /dev/ttyUSB0  # Move forward
+CONFIG=$(ros2 pkg prefix wave_rover_controller)/share/wave_rover_controller/config/teleop_joy.yaml
+ros2 run joy_linux joy_linux_node --ros-args --params-file "$CONFIG"
+ros2 run teleop_twist_joy teleop_node --ros-args --params-file "$CONFIG"
 ```
 
-### ROS2 Testing
-
-On host or robot:
+**All on one machine** (gamepad plugged into RB3):
 
 ```bash
-ros2 topic pub /cmd_vel geometry_msgs/msg/Twist "{linear: {x:0.1}, angular: {z:1.0}}"
-ros2 topic echo /cmd_vel
+# Terminal 1
+ros2 launch wave_rover_controller wave_rover_launch.py
+
+# Terminal 2
+CONFIG=$(ros2 pkg prefix wave_rover_controller)/share/wave_rover_controller/config/teleop_joy.yaml
+ros2 run joy_linux joy_linux_node --ros-args --params-file "$CONFIG"
+ros2 run teleop_twist_joy teleop_node --ros-args --params-file "$CONFIG"
+```
+
+**Split** (driver on RB3, gamepad on host PC — same `ROS_DOMAIN_ID`):
+
+```bash
+# RB3 — driver only
+ros2 launch wave_rover_controller wave_rover_launch.py
+
+# Host PC — gamepad teleop (needs joy_linux + teleop_twist_joy installed)
+CONFIG=$(ros2 pkg prefix wave_rover_controller)/share/wave_rover_controller/config/teleop_joy.yaml
+ros2 run joy_linux joy_linux_node --ros-args --params-file "$CONFIG"
+ros2 run teleop_twist_joy teleop_node --ros-args --params-file "$CONFIG"
+```
+
+> **Safety:** Ensure the robot is stationary before starting teleop.
+
+> **Keyboard:** `config/teleop_keyboard.yaml` is available for manual `teleop_twist_keyboard` use (not bundled in deploy).
+
+### Verify teleop config loaded
+
+When `teleop_twist_joy` starts, it logs the active mapping. Compare against your `teleop_joy.yaml` — if you see package defaults (`enable_button` 5, `axis_linear.x` 5, `scale_linear.x` 0.5), the params file was not applied.
+
+Example with current Microntek defaults in `teleop_joy.yaml`:
+
+```
+Teleop enable button 5.
+Linear axis x on 1 at scale 0.300000.
+Angular axis yaw on 0 at scale 1.000000.
+```
+
+The YAML keys must match the **ROS node names**, not the executable names:
+
+| YAML section | Executable | ROS node name |
+|--------------|--------------|---------------|
+| `joy_node` | `joy_linux_node` | `joy_node` |
+| `teleop_twist_joy_node` | `teleop_node` | `teleop_twist_joy_node` |
+
+Use nested parameter groups (`axis_linear: { x: 1 }`) as in upstream `teleop_twist_joy` configs.
+
+---
+
+## Configuration
+
+| File | What to tune |
+|------|----------------|
+| `config/wave_rover_controller.yaml` | UART, diff-drive (`wheel_separation`, `speed_scale`, motor limits) |
+| `config/teleop_joy.yaml` | Gamepad device, axes, buttons, stick sensitivity |
+| `config/teleop_keyboard.yaml` | Keyboard speed / turn rate |
+
+On RB3: `/usr/share/wave_rover_controller/config/`  
+Edit, then **restart** the affected node (no rebuild needed for YAML-only changes).
+
+Driver startup log confirms config:
+
+```
+Config: UART=... speed_scale=... wheel_separation=...
 ```
 
 ---
 
-## JSON Protocol Reference
+## Cross-compile for RB3 Gen2 (QIR SDK)
+
+Build bundles the driver plus `joy_linux` and `teleop_twist_joy` for the RB3.
+
+```bash
+cd <qirp-sdk>
+source setup.sh
+
+cd WAVE-ROVER-Controller
+./scripts/build.sh
+./scripts/deploy.sh root@<rb3-ip>
+```
+
+`build.sh` handles cross-compile hygiene automatically:
+
+- Clears host ROS (`/opt/ros`) from prefix paths if present
+- Unsets `LD_LIBRARY_PATH` (required by the QIR SDK)
+- Uses the native x86 Python to run colcon
+- Verifies all binaries are **aarch64**
+
+If you prefer a clean shell, you can still run `unset LD_LIBRARY_PATH CMAKE_PREFIX_PATH AMENT_PREFIX_PATH COLCON_PREFIX_PATH` before `source setup.sh`.
+
+For a full rebuild:
+
+```bash
+rm -rf build install log deps
+./scripts/build.sh
+```
+
+See the QIR SDK `CROSS_COMPILE.md` in your SDK tree for the full workflow.
+
+---
+
+## ROS 2 topics
+
+**Subscribed:** `/cmd_vel` (`geometry_msgs/msg/Twist`)
+
+**Published:** `/cmd_vel_executed`, `/liveness`
+
+---
+
+## JSON protocol (UART)
 
 ```json
-{
-  "T": <command_type>,
-  "L": <left_motor_speed>,
-  "R": <right_motor_speed>
-}
+{"T": 1, "L": <left>, "R": <right>}
 ```
 
-### Command Types
-
-* `-3`: OLED Reset
-* `0`: Emergency Stop
-* `1`: Speed Input (`L`/`R`: -255 to 255)
-* `3`: OLED Set (`lineNum`, `Text`)
-
----
-
-## Troubleshooting
-
-* **Serial Permission Denied**: Use `--group-add dialout` or set udev rules.
-* **No Response from Robot**: Check `/dev/ttyUSB0` and baud rate (115200).
-* **Joypad Not Working**: Verify connection and permissions.
-* **Build Errors**: Ensure Qt and ROS2 dependencies are installed.
-
-Debugging tips:
-
-```bash
-export RCUTILS_LOGGING_SEVERITY_THRESHOLD=DEBUG
-ls -la /dev/ttyUSB*
-journalctl -f
-```
-
----
-
-## Contributing
-
-Based on [antlassagne/ros2-wave-rover](https://github.com/antlassagne/ros2-wave-rover) with:
-
-* Updated UART communication
-* Joypad and keyboard support
-* Improved logging and debugging
-* Enhanced documentation
+Motor command `T:1` with `L`/`R` in ±0.5 (firmware clamp). See source for OLED, WiFi, and e-stop commands.
 
 ---
 
 ## License
 
-MIT License (see `package.xml` for details)
-
-```
+MIT

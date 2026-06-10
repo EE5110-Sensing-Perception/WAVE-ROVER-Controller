@@ -1,38 +1,34 @@
 #pragma once
-#include <QString>
-#include <QSerialPort>
-#include <QObject>
+
 #include <mutex>
-#include <thread>
+#include <string>
+#include <vector>
 
+class UARTSerialPort {
+public:
+    UARTSerialPort(const std::string & path, int baudrate);
+    ~UARTSerialPort();
 
-class UARTSerialPort : public QObject {
-    Q_OBJECT
+    bool isAvailable();
 
-    public:
-        UARTSerialPort(QString path, int baudrate);
-        ~UARTSerialPort();
+    void sendRequestSync(const std::string & text);
+    bool getResponseSync(const std::string & command, std::string & response);
+    bool sendRequestSync(const std::vector<uint8_t> & data);
 
-        bool isAvailable();
+    bool readResponse();
 
-    public slots:
-        void sendRequestSync(QString);
-        bool getResponseSync(const QString& command, QString& response);
-        bool sendRequestSync(const QByteArray& text);
+private:
+    bool configurePort(int baudrate);
+    bool waitForReadable(int timeout_ms);
+    bool waitForWritable(int timeout_ms);
+    static std::vector<std::string> listSerialDevices();
 
-        bool readResponse();
+    int _fd{-1};
+    std::string _path;
+    std::string _response;
 
-    private:
-        QSerialPort _serial;
-        QByteArray _response;
+    std::mutex _serial_mutex;
 
-        std::mutex _serial_mutex;
-
-        std::thread _receive_thread;
-
-        const int _receiveTimeout = 10000;
-        const int _writeTimeout = 10000;
-
+    static constexpr int _receiveTimeout = 10000;
+    static constexpr int _writeTimeout = 10000;
 };
-
-
