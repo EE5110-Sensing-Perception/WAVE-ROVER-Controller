@@ -1,0 +1,48 @@
+# Simple cmd_vel bridge (nodes/wave_rover_bridge.py).
+# Lightweight alternative to the C++ UART driver. Edit, then restart the node.
+
+/**:
+  ros__parameters:
+    # Transport: 'http' (WiFi) or 'serial' (USB/UART).
+    transport: http
+
+    # --- HTTP transport ---
+    # IP of the Wave Rover.
+    #   AP mode  (rover's own hotspot "UGV", pw 12345678): 192.168.4.1
+    #   STA mode (joined your router): the IP shown on the rover's OLED
+    rover_ip: 192.168.4.1
+    # Per-command HTTP timeout, seconds.
+    request_timeout: 0.2
+
+    # --- Serial transport ---
+    serial_port: /dev/ttyUSB0
+    baud_rate: 115200
+
+    # --- Diff-drive tuning (both transports) ---
+    # Distance between the two drive wheels, metres.
+    track_width: 0.15
+    # Speed (m/s) that maps to full motor output (1.0). Tune on your platform.
+    max_speed: 1.25
+    # Stop the rover if no cmd_vel arrives within this many seconds (0.0 = off).
+    cmd_timeout: 0.5
+
+    # --- Odometry ---
+    odom_frame: odom
+    base_frame: base_link
+    # Set false if robot_localization (or similar) will broadcast the TF instead.
+    publish_tf: true
+
+    # --- Tank-drive joystick (sensor_msgs/Joy) ---
+    # Hold joy_deadman_button to take direct per-wheel control via the sticks.
+    # Releasing the button hands control back to cmd_vel (Nav2 / teleop_twist_joy).
+    # Set joy_deadman_button to -1 to require no button (always active).
+    #
+    # Microntek USB Joystick axis layout:
+    #   0 = left stick X    1 = left stick Y
+    #   2 = right stick X   3 = right stick Y
+    #   4 = d-pad X         5 = d-pad Y
+    joy_left_axis: 1
+    joy_left_scale: 1.0
+    joy_right_axis: 3
+    joy_right_scale: 1.0
+    joy_deadman_button: 5    # RB — matches existing teleop enable_button

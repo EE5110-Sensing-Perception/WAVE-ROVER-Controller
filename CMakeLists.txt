@@ -37,6 +37,12 @@ install(TARGETS wave_rover_controller
   DESTINATION lib/${PROJECT_NAME}
 )
 
+# Simple Python WiFi/HTTP bridge (alternative to the C++ UART driver).
+install(PROGRAMS
+  nodes/wave_rover_bridge.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 install(DIRECTORY launch DESTINATION share/${PROJECT_NAME}/)
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME}/)
 

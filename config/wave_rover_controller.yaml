@@ -5,12 +5,19 @@
 
 /**:
   ros__parameters:
-    UART_address: "/dev/ttyUSB0"
+    serial_port: /dev/ttyUSB0
+    baud_rate: 115200
     speed_scale: 1.0
     wheel_separation: 0.125
-    spin_boost: 0.0
+    wheel_radius: 0.0325
+    spin_boost: 1.0
+    # Motor friction floor: lifts small commands so the wheels start moving at
+    # low stick deflection instead of sitting dead then snapping on. 0.0 = off.
+    # Tune up (e.g. 0.08 -> 0.15) until the rover just barely creeps at the
+    # smallest stick push; too high makes it impossible to crawl slowly.
+    motor_deadband: 0.1
     motor_speed_max: 1.0
     linear_clamp_max: 1.0
-    angular_clamp_max: 2.0
+    angular_clamp_max: 3.0
     cmd_timeout_ms: 500
     send_min_interval_ms: 50

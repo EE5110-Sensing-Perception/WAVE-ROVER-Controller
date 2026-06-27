@@ -21,6 +21,7 @@ RobotController::RobotController()
 
     _wheel_separation = static_cast<float>(_pROS2Subscriber->get_parameter("wheel_separation").as_double());
     _spin_boost = static_cast<float>(_pROS2Subscriber->get_parameter("spin_boost").as_double());
+    _motor_deadband = static_cast<float>(_pROS2Subscriber->get_parameter("motor_deadband").as_double());
     _motor_speed_max = static_cast<float>(_pROS2Subscriber->get_parameter("motor_speed_max").as_double());
     _linear_clamp_max = static_cast<float>(_pROS2Subscriber->get_parameter("linear_clamp_max").as_double());
     _angular_clamp_max = static_cast<float>(_pROS2Subscriber->get_parameter("angular_clamp_max").as_double());
@@ -35,9 +36,9 @@ RobotController::RobotController()
     RCLCPP_INFO(
         _pROS2Subscriber->get_logger(),
         "Config: UART=%s speed_scale=%.2f wheel_separation=%.3f "
-        "spin_boost=%.2f motor_max=%.2f linear_clamp=%.2f angular_clamp=%.2f",
+        "spin_boost=%.2f motor_deadband=%.2f motor_max=%.2f linear_clamp=%.2f angular_clamp=%.2f",
         uart_address.c_str(), speed_scale, _wheel_separation, _spin_boost,
-        _motor_speed_max, _linear_clamp_max, _angular_clamp_max);
+        _motor_deadband, _motor_speed_max, _linear_clamp_max, _angular_clamp_max);
 
     _pROS2Subscriber->SubscribeToTopic("/cmd_vel", [this](const geometry_msgs::msg::Twist::SharedPtr msg) {
         SendCmdVel(msg);
@@ -173,6 +174,27 @@ bool RobotController::SendCmdVel(geometry_msgs::msg::Twist::SharedPtr msg, bool 
     if (std::abs(X) < 1e-3f && std::abs(Z) > 1e-3f) {
         left_speed = (left_speed < 0) ? left_speed - _spin_boost : left_speed + _spin_boost;
         right_speed = (right_speed < 0) ? right_speed - _spin_boost : right_speed + _spin_boost;
+    }
+
+    // Deadband compensation: lift any non-zero command up to the motor's
+    // minimum-move floor so the wheels start turning at small stick deflections
+    // and ramp smoothly, instead of sitting below the friction threshold and
+    // then snapping on. A true zero command stays zero so the rover can stop.
+    if (_motor_deadband > 0.0f && _motor_speed_max > _motor_deadband) {
+        const float span = _motor_speed_max - _motor_deadband;
+        auto lift = [this, span](float v) -> float {
+            const float mag = std::abs(v);
+            if (mag < 1e-3f) {
+                return 0.0f;
+            }
+            const float sign = (v < 0.0f) ? -1.0f : 1.0f;
+            const float scaled =
+                _motor_deadband + span * std::min(mag, _motor_speed_max) / _motor_speed_max;
+            // Preserve any spin_boost overshoot beyond motor_speed_max.
+            return sign * std::max(scaled, mag);
+        };
+        left_speed = lift(left_speed);
+        right_speed = lift(right_speed);
     }
 
     message_json["L"] = left_speed;

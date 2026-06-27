@@ -1,0 +1,26 @@
+# Optional overlay for onboard C++ joypad (enable_joypad:=1).
+# Do NOT use together with control_launch.py — pick one joypad path.
+#
+# Load on top of wave_rover_controller.yaml:
+#   ros2 launch wave_rover_controller wave_rover_launch.py \
+#     --ros-args --params-file /usr/share/wave_rover_controller/config/joypad_builtin.yaml
+#
+# Or merge these keys into wave_rover_controller.yaml.
+
+/**:
+  ros__parameters:
+    enable_joypad: 1
+
+    joypad:
+      device: "/dev/input/js0"
+      axis_linear: 1             # left stick forward/back
+      axis_angular: 0            # left stick left/right
+      deadzone: 7000
+      scale_linear: 1.0
+      scale_angular: 1.0
+      invert_linear: false
+      invert_angular: false
+      require_enable_button: true
+      button_enable: 0           # Trigger
+      button_disable: 3
+      button_ignore_obstacles: 5 # -1 to disable

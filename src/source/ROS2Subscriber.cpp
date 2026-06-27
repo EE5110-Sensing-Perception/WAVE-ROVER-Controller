@@ -11,6 +11,7 @@ ROS2Subscriber::ROS2Subscriber()
     this->declare_parameter("speed_scale", rclcpp::ParameterValue(0.5));
     this->declare_parameter("wheel_separation", rclcpp::ParameterValue(2.0));
     this->declare_parameter("spin_boost", rclcpp::ParameterValue(0.25));
+    this->declare_parameter("motor_deadband", rclcpp::ParameterValue(0.0));
     this->declare_parameter("motor_speed_max", rclcpp::ParameterValue(0.5));
     this->declare_parameter("linear_clamp_max", rclcpp::ParameterValue(1.0));
     this->declare_parameter("angular_clamp_max", rclcpp::ParameterValue(2.0));

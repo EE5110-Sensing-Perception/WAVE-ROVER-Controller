@@ -52,6 +52,7 @@ private:
 
     float _wheel_separation = 2.0f;
     float _spin_boost = 0.25f;
+    float _motor_deadband = 0.0f;
     float _motor_speed_max = 0.5f;
     float _linear_clamp_max = 1.0f;
     float _angular_clamp_max = 2.0f;

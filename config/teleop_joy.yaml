@@ -6,22 +6,24 @@
 joy_node:
   ros__parameters:
     dev: "/dev/input/js0"
-    deadzone: 0.01
+    deadzone: 0.005
     autorepeat_rate: 20.0
 
 teleop_twist_joy_node:
   ros__parameters:
+    # Microntek USB Joystick — left stick drive
+    require_enable_button: true
+    enable_button: 5
+    enable_turbo_button: -1
     # Microntek USB Joystick — left stick drive
     axis_linear:
       x: 1
     axis_angular:
       yaw: 0
     scale_linear:
-      x: 0.3
+      x: 0.5
     scale_angular:
-      yaw: 1.0
-    require_enable_button: true
-    enable_button: 5
-    enable_turbo_button: -1
+      yaw: 2.0
+    # QoS overrides for reliable delivery of /cmd_vel.
     qos_overrides./cmd_vel.publisher.reliability: reliable
     qos_overrides./cmd_vel.publisher.durability: volatile
