@@ -217,7 +217,7 @@ Use nested parameter groups (`axis_linear: { x: 1 }`) as in upstream `teleop_twi
 
 | File | What to tune |
 |------|----------------|
-| `config/wave_rover_controller.yaml` | C++ driver: serial port, diff-drive (`wheel_separation`, `speed_scale`, `spin_boost`, `motor_deadband`, motor/clamp limits) |
+| `config/wave_rover_controller.yaml` | C++ driver: serial port (`UART_address`), diff-drive (`wheel_separation`, `speed_scale`, `spin_boost`, `motor_deadband`, motor/clamp limits) |
 | `config/wave_rover_bridge.yaml` | Python bridge: `transport` (http/serial), `rover_ip`, `track_width`, `max_speed`, odom frames, tank-drive joy axes |
 | `config/joypad_builtin.yaml` | Optional overlay for the driver's onboard C++ joypad (`enable_joypad:=1`) |
 | `config/teleop_joy.yaml` | Gamepad device, axes, buttons, stick sensitivity |
@@ -226,10 +226,8 @@ Use nested parameter groups (`axis_linear: { x: 1 }`) as in upstream `teleop_twi
 On RB3: `/usr/share/wave_rover_controller/config/`  
 Edit, then **restart** the affected node (no rebuild needed for YAML-only changes).
 
-> **Note:** the C++ driver currently reads the serial device from the
-> `UART_address` key (and uses a fixed 115200 baud). The `serial_port`,
-> `baud_rate`, and `wheel_radius` keys in `wave_rover_controller.yaml` are not
-> yet wired into the driver, so set `UART_address` if you need a non-default port.
+> **Note:** the C++ driver reads the serial device from the `UART_address` key
+> and uses a fixed 115200 baud. Set `UART_address` if you need a non-default port.
 
 Driver startup log confirms config:
 

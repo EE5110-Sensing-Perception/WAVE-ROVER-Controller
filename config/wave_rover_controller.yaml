@@ -5,11 +5,10 @@
 
 /**:
   ros__parameters:
-    serial_port: /dev/ttyUSB0
-    baud_rate: 115200
+    # Serial device the driver opens (baud is fixed at 115200 in the driver).
+    UART_address: "/dev/ttyUSB0"
     speed_scale: 1.0
     wheel_separation: 0.125
-    wheel_radius: 0.0325
     spin_boost: 1.0
     # Motor friction floor: lifts small commands so the wheels start moving at
     # low stick deflection instead of sitting dead then snapping on. 0.0 = off.
